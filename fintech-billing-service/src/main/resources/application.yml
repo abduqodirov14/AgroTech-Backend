@@ -1,0 +1,19 @@
+server:
+  port: 3004
+
+spring:
+  application:
+    name: fintech-billing-service
+  
+  datasource:
+    url: ${DATABASE_URL}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+# TODO: Bank API integration
+# TODO: Credit scoring rules
+# TODO: Insurance providers

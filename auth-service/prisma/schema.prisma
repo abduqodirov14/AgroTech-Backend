@@ -1,0 +1,37 @@
+// Prisma schema for PostgreSQL
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model - fermer ma'lumotlari
+model User {
+  id         String   @id @default(uuid())
+  phone      String   @unique // +998901234567
+  telegramId BigInt   @unique @map("telegram_id")
+  name       String
+  username   String?  // @username (optional)
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastLogin  DateTime @default(now()) @map("last_login")
+
+  @@map("users")
+}
+
+// AuthSession model - vaqtinchalik 4 xonali kod
+model AuthSession {
+  id         String   @id @default(uuid())
+  phone      String
+  telegramId BigInt   @map("telegram_id")
+  code       String   // 4 xonali kod
+  expiresAt  DateTime @map("expires_at")
+  isUsed     Boolean  @default(false) @map("is_used")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([phone, code])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
