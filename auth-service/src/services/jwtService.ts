@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { env } from '../config/env';
 import { User } from '../models/User';
 
@@ -8,9 +8,6 @@ export interface JwtPayload {
   telegramId: string;
 }
 
-/**
- * JWT token yaratish
- */
 export const generateToken = (user: User): string => {
   const payload: JwtPayload = {
     userId: user.id,
@@ -19,13 +16,10 @@ export const generateToken = (user: User): string => {
   };
 
   return jwt.sign(payload, env.JWT_SECRET, {
-    expiresIn: env.JWT_EXPIRES_IN,
+    expiresIn: env.JWT_EXPIRES_IN as any,
   });
 };
 
-/**
- * JWT token tekshirish
- */
 export const verifyToken = (token: string): JwtPayload => {
   try {
     return jwt.verify(token, env.JWT_SECRET) as JwtPayload;
@@ -34,9 +28,6 @@ export const verifyToken = (token: string): JwtPayload => {
   }
 };
 
-/**
- * Authorization header'dan token olish
- */
 export const extractToken = (authHeader?: string): string | null => {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null;

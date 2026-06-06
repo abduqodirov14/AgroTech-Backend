@@ -3,6 +3,7 @@ import { app } from './src/app';
 import { connectDatabase, disconnectDatabase } from './src/config/database';
 import { env } from './src/config/env';
 import { logger } from './src/utils/logger';
+import { initializeBot, stopBot } from './src/bot/bot';
 
 /**
  * HTTP Server ishga tushirish
@@ -11,6 +12,16 @@ const startServer = async () => {
   try {
     // Database ulanish
     await connectDatabase();
+
+    // Telegram bot ishga tushirish
+    try {
+      await initializeBot();
+    } catch (error: any) {
+      logger.error('❌ Failed to start bot', { 
+        message: error?.message || 'Unknown error',
+        stack: error?.stack 
+      });
+    }
 
     // Server'ni tinglash
     app.listen(env.PORT, () => {
@@ -30,6 +41,10 @@ const startServer = async () => {
 const gracefulShutdown = async (signal: string) => {
   logger.info(`${signal} signal received - starting graceful shutdown`);
   
+  // Stop Telegram bot
+  await stopBot();
+  
+  // Disconnect database
   await disconnectDatabase();
   
   process.exit(0);

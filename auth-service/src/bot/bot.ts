@@ -4,15 +4,10 @@ import { handleStart } from './handlers/startHandler';
 import { handleContact } from './handlers/contactHandler';
 import { logger } from '../utils/logger';
 
-// Bot instance
 let bot: TelegramBot | null = null;
 
-/**
- * Bot handlerlarni ulash
- */
 export const initializeBot = () => {
   try {
-    // Token tekshirish
     if (!env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN.length < 20) {
       throw new Error('Invalid TELEGRAM_BOT_TOKEN in .env file');
     }
@@ -20,7 +15,6 @@ export const initializeBot = () => {
     logger.info('🔄 Initializing Telegram bot...');
     logger.info(`📱 Bot token: ${env.TELEGRAM_BOT_TOKEN.substring(0, 10)}...`);
 
-    // Bot instance yaratish
     bot = new TelegramBot(env.TELEGRAM_BOT_TOKEN, {
       polling: {
         interval: 300,
@@ -31,7 +25,6 @@ export const initializeBot = () => {
       },
     });
 
-    // Polling error handler (birinchi bo'lishi kerak)
     bot.on('polling_error', (error: any) => {
       logger.error('❌ Telegram bot polling error', { 
         message: error?.message || 'Unknown error',
@@ -40,7 +33,6 @@ export const initializeBot = () => {
       });
     });
 
-    // /start command
     bot.onText(/\/start/, async (msg) => {
       try {
         await handleStart(bot!, msg);
@@ -52,7 +44,6 @@ export const initializeBot = () => {
       }
     });
 
-    // Contact message
     bot.on('contact', async (msg) => {
       try {
         await handleContact(bot!, msg);
@@ -64,10 +55,8 @@ export const initializeBot = () => {
       }
     });
 
-    // Boshqa text message'lar uchun
     bot.on('message', async (msg) => {
       try {
-        // Agar contact yoki command bo'lmasa
         if (!msg.contact && !msg.text?.startsWith('/')) {
           await bot!.sendMessage(
             msg.chat.id,
@@ -95,9 +84,6 @@ export const initializeBot = () => {
   }
 };
 
-/**
- * Bot'ni to'xtatish
- */
 export const stopBot = async () => {
   try {
     if (bot) {
@@ -111,5 +97,4 @@ export const stopBot = async () => {
   }
 };
 
-// Bot instanceni export qilish (handlerlar uchun kerak)
 export const getBot = () => bot;
