@@ -1,0 +1,23 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SensorReading {
+  id            String   @id @default(uuid())
+  sensorId      String   @map("sensor_id")
+  soilMoisture  Float    @map("soil_moisture")
+  pH            Float
+  temperature   Float
+  valveState    String   @map("valve_state") @default("OFF")
+  timestamp     DateTime @default(now())
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("sensor_readings")
+  @@index([sensorId, timestamp])
+  @@index([timestamp])
+}

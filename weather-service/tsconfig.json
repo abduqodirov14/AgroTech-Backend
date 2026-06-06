@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "moduleResolution": "bundler"
   },
-  "include": ["src/**/*", "*.ts"],
+  "include": ["**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
