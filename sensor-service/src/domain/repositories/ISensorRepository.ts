@@ -1,6 +1,7 @@
-import { SensorReading, CreateSensorReadingDTO } from '../entities/SensorReading';
+import { ISensorReading, CreateSensorReadingDTO } from '../../domain/entities/SensorReading';
 
 export interface ISensorRepository {
-  create(data: CreateSensorReadingDTO): Promise<SensorReading>;
-  findRecent(limit: number): Promise<SensorReading[]>;
+  create(data: CreateSensorReadingDTO): Promise<ISensorReading>;
+  findRecentByDevice(deviceId: string, limit: number): Promise<ISensorReading[]>;
+  findLatestByDevice(deviceId: string): Promise<ISensorReading | null>;
 }

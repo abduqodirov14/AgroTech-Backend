@@ -1,0 +1,17 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const irrigationController_1 = require("../controllers/irrigationController");
+const ToggleIrrigationUseCase_1 = require("../../domain/usecases/ToggleIrrigationUseCase");
+const MqttPublisher_1 = require("../../infrastructure/mqtt/MqttPublisher");
+const router = (0, express_1.Router)();
+const mqttPublisher = new MqttPublisher_1.MqttPublisher();
+const toggleIrrigationUseCase = new ToggleIrrigationUseCase_1.ToggleIrrigationUseCase(mqttPublisher);
+const irrigationController = new irrigationController_1.IrrigationController(toggleIrrigationUseCase);
+router.post('/toggle', (req, res) => irrigationController.toggle(req, res));
+router.get('/zones', (req, res) => irrigationController.zones(req, res));
+router.post('/zones', (req, res) => irrigationController.addZone(req, res));
+router.get('/schedules', (req, res) => irrigationController.schedules(req, res));
+router.post('/schedules', (req, res) => irrigationController.createSchedule(req, res));
+router.post('/sensors/upload', (req, res) => irrigationController.uploadSensorReadings(req, res));
+exports.default = router;

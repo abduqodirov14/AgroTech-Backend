@@ -1,19 +1,22 @@
 export interface SensorReading {
   id: string;
-  sensorId: string;
-  soilMoisture: number;
-  pH: number;
-  temperature: number;
-  valveState: string;
-  timestamp: Date;
+  deviceId: string;
+  moisture: number | null;
+  temperature: number | null;
+  ph: number | null;
+  ec: number | null;
+  npk: number | null;
+  battery: number | null;
   createdAt: Date;
 }
 
 export interface CreateSensorReadingDTO {
-  sensorId: string;
-  soilMoisture: number;
-  pH: number;
-  temperature: number;
-  valveState: string;
-  timestamp: Date;
+  deviceId: string;
+  moisture?: number | null;
+  temperature?: number | null;
+  ph?: number | null;
+  ec?: number | null;
+  npk?: number | null;
+  battery?: number | null;
+  timestamp?: Date;
 }
