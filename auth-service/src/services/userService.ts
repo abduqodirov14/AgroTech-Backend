@@ -28,12 +28,12 @@ export const createUser = async (data: CreateUserInput): Promise<User> => {
     data: {
       phone: data.phone,
       telegramId: data.telegramId,
-      name: data.name,
+      fullName: data.fullName,
       username: data.username,
     },
   });
 
-  logger.info('✅ New user created', { phone: user.phone, telegramId: user.telegramId.toString() });
+  logger.info('✅ New user created', { phone: user.phone, telegramId: user.telegramId?.toString() });
   return user;
 };
 

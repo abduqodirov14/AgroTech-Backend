@@ -1,3 +1,5 @@
+// AgroHub Marketplace — full B2B schema (shared PostgreSQL)
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,19 +9,307 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// SHARED REFERENCES (owned by auth-service)
+// ============================================
+
+enum UserRole {
+  FARMER
+  BUYER
+  DRIVER
+  LOGISTICS_ADMIN
+  ADMIN
+}
+
+model User {
+  id         String   @id @default(cuid())
+  phone      String   @unique
+  telegramId BigInt?  @unique @map("telegram_id")
+  fullName   String   @map("full_name")
+  username   String?
+  role       UserRole @default(FARMER)
+
+  listings  Listing[]
+  orders    Order[]   @relation("BuyerOrders")
+  cart      Cart?
+  favorites Favorite[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model Zone {
+  id        String  @id @default(cuid())
+  name      String
+  latitude  Float
+  longitude Float
+  userId    String
+  devices   Device[]
+
+  @@map("zones")
+}
+
+model Device {
+  id       String          @id @default(cuid())
+  zoneId   String
+  zone     Zone            @relation(fields: [zoneId], references: [id])
+  readings SensorReading[]
+
+  @@map("devices")
+}
+
+model SensorReading {
+  id            String   @id @default(cuid())
+  deviceId      String
+  device        Device   @relation(fields: [deviceId], references: [id])
+  moisture      Float?
+  temperature   Float?
+  ph            Float?
+  ec            Float?
+  npk           Float?
+  battery       Float?
+  signalStrength Int?    @map("signal_strength")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([deviceId, createdAt])
+  @@map("sensor_readings")
+}
+
+// ============================================
+// MARKETPLACE LISTINGS
+// ============================================
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  EXPIRED
+  CANCELLED
+}
+
+enum ListingCategory {
+  SEEDS
+  FERTILIZERS
+  PESTICIDES
+  EQUIPMENT
+  IRRIGATION
+  SERVICES
+  PRODUCE
+  GRAINS
+  FRUITS
+  VEGETABLES
+  LIVESTOCK
+}
+
 model Listing {
-  id        String   @id @default(uuid())
-  title     String
-  price     Float
-  unit      String
-  quantity  Int
-  region    String
-  phone     String
-  seller    String
+  id              String          @id @default(cuid())
+  sellerId        String
+  seller          User            @relation(fields: [sellerId], references: [id])
+  title           String
+  description     String?
+  category        ListingCategory @default(PRODUCE)
+  brand           String?
+  price           Float
+  originalPrice   Float?          @map("original_price")
+  discountPercent Float?          @map("discount_percent")
+  unit            String
+  quantity        Float
+  region          String
+  zoneId          String?         @map("zone_id")
+  cropType        String?         @map("crop_type")
+  imageUrl        String?         @map("image_url")
+  rating          Float           @default(0)
+  reviewCount     Int             @default(0) @map("review_count")
+  isFeatured      Boolean         @default(false) @map("is_featured")
+  viewCount       Int             @default(0) @map("view_count")
+  status          ListingStatus   @default(ACTIVE)
+
+  sensorSnapshot ListingSensorSnapshot?
+  cartItems      CartItem[]
+  favorites      Favorite[]
+  orders         Order[]
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@index([region])
-  @@index([phone])
+  @@index([region, status, category])
+  @@index([sellerId])
+  @@index([isFeatured, status])
   @@map("listings")
+}
+
+model ListingSensorSnapshot {
+  id        String  @id @default(cuid())
+  listingId String  @unique
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  zoneId    String  @map("zone_id")
+  data      Json
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("listing_sensor_snapshots")
+}
+
+// ============================================
+// CATALOG (supplier products & services)
+// ============================================
+
+model CatalogProduct {
+  id              String          @id @default(cuid())
+  name            String
+  brand           String
+  category        ListingCategory
+  price           Float
+  originalPrice   Float?          @map("original_price")
+  discountPercent Float?          @map("discount_percent")
+  unit            String          @default("pack")
+  rating          Float           @default(4.5)
+  reviewCount     Int             @default(0) @map("review_count")
+  badge           String?
+  imageUrl        String?         @map("image_url")
+  isActive        Boolean         @default(true) @map("is_active")
+  stock           Int             @default(100)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([category, isActive])
+  @@map("catalog_products")
+}
+
+model ServiceOffering {
+  id          String  @id @default(cuid())
+  name        String
+  description String
+  price       Float
+  unit        String
+  isActive    Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("service_offerings")
+}
+
+model Promotion {
+  id          String  @id @default(cuid())
+  title       String
+  subtitle    String?
+  ctaLabel    String  @map("cta_label")
+  ctaAction   String  @map("cta_action")
+  imageUrl    String? @map("image_url")
+  color       String  @default("#10B981")
+  sortOrder   Int     @default(0) @map("sort_order")
+  isActive    Boolean @default(true) @map("is_active")
+
+  @@map("promotions")
+}
+
+// ============================================
+// CART & FAVORITES
+// ============================================
+
+model Cart {
+  id     String     @id @default(cuid())
+  userId String     @unique
+  user   User       @relation(fields: [userId], references: [id])
+  items  CartItem[]
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id])
+  quantity  Float
+
+  @@unique([cartId, listingId])
+  @@map("cart_items")
+}
+
+model Favorite {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, listingId])
+  @@map("favorites")
+}
+
+// ============================================
+// ORDERS & ESCROW (B2B)
+// ============================================
+
+enum OrderStatus {
+  PENDING
+  ESCROW_FUNDED
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  orderNumber String     @unique @map("order_number")
+  listingId  String
+  listing    Listing     @relation(fields: [listingId], references: [id])
+  buyerId    String
+  buyer      User        @relation("BuyerOrders", fields: [buyerId], references: [id])
+  quantity   Float
+  unitPrice  Float       @map("unit_price")
+  totalPrice Float       @map("total_price")
+  currency   String      @default("UZS")
+  status     OrderStatus @default(PENDING)
+  notes      String?
+
+  escrow   EscrowPayment?
+  contract B2BContract?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([buyerId, status])
+  @@index([listingId])
+  @@map("orders")
+}
+
+enum EscrowStatus {
+  PENDING
+  FUNDED
+  RELEASED
+  REFUNDED
+}
+
+model EscrowPayment {
+  id         String       @id @default(cuid())
+  orderId    String       @unique
+  order      Order        @relation(fields: [orderId], references: [id])
+  amount     Float
+  currency   String       @default("UZS")
+  status     EscrowStatus @default(PENDING)
+  fundedAt   DateTime?    @map("funded_at")
+  releasedAt DateTime?    @map("released_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("escrow_payments")
+}
+
+model B2BContract {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id])
+  terms     Json
+  signedAt  DateTime @default(now()) @map("signed_at")
+
+  @@map("b2b_contracts")
 }

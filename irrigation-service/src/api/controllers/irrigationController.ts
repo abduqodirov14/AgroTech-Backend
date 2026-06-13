@@ -45,6 +45,23 @@ export class IrrigationController {
     }
   }
 
+  async zoneById(req: Request, res: Response): Promise<void> {
+    try {
+      const zone = await this.toggleIrrigationUseCase.getZoneById(req.params.zone_id);
+      if (!zone) {
+        res.status(404).json({ success: false, message: 'Zone not found' });
+        return;
+      }
+      res.status(200).json({ success: true, data: zone });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch zone',
+        error: error.message,
+      });
+    }
+  }
+
   async addZone(req: Request, res: Response): Promise<void> {
     try {
       const { name, area, soil_type, irrigation_type, device_id, crop_type, duration_minutes } = req.body;

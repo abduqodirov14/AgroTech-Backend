@@ -1,0 +1,932 @@
+// AgroHub — Unified Database Schema (Single Source of Truth)
+// Barcha servislar shu schemadan Prisma client generate qiladi.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTH / USER
+// ============================================
+
+enum UserRole {
+  FARMER
+  BUYER
+  DRIVER
+  LOGISTICS_ADMIN
+  ADMIN
+}
+
+model User {
+  id         String    @id @default(cuid())
+  phone      String    @unique
+  telegramId BigInt?   @unique @map("telegram_id")
+  fullName   String    @map("full_name")
+  username   String?
+  role       UserRole  @default(FARMER)
+  lastLogin  DateTime? @map("last_login")
+
+  sessions      AuthSession[]
+  zones         Zone[]
+  notifications Notification[]
+  listings      Listing[]
+  buyerOrders   Order[]   @relation("BuyerOrders")
+  cart          Cart?
+  favorites     Favorite[]
+  transactions  Transaction[]
+  budgets       Budget[]
+  agroScores    AgroScore[]
+  creditApps    CreditApplication[]
+  reports       Report[]
+  customers     Customer[]
+  deviceOwnerships DeviceOwnership[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model AuthSession {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  phone      String
+  telegramId BigInt?  @map("telegram_id")
+  code       String
+  expiresAt  DateTime @map("expires_at")
+  isUsed     Boolean  @default(false) @map("is_used")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([phone, code])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+// ============================================
+// FARM / ZONE / DEVICE
+// ============================================
+
+model Zone {
+  id        String @id @default(cuid())
+  name      String
+  latitude  Float
+  longitude Float
+  userId    String
+  user      User   @relation(fields: [userId], references: [id])
+
+  devices     Device[]
+  events      IrrigationEvent[]
+  schedules   IrrigationSchedule[]
+  forecasts   WeatherForecast[]
+  cropBatches CropBatch[]
+  snapshots   AnalyticsSnapshot[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("zones")
+}
+
+model Device {
+  id          String    @id @default(cuid())
+  macAddress  String    @unique @map("mac_address")
+  macHash     String    @unique @map("mac_hash")
+  name        String?
+  secretKey   String    @map("secret_key")
+  status      DeviceStatus @default(OFFLINE)
+  lastSeen    DateTime? @map("last_seen")
+
+  zoneId String
+  zone   Zone   @relation(fields: [zoneId], references: [id])
+
+  readings SensorReading[]
+  events   IrrigationEvent[]
+  deviceOwnerships DeviceOwnership[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("devices")
+}
+
+model DeviceOwnership {
+  id        String   @id @default(cuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isOwner   Boolean  @default(true) @map("is_owner")
+
+  @@unique([deviceId, userId])
+  @@index([userId])
+  @@map("device_ownerships")
+}
+
+// ============================================
+// SENSOR DATA
+// ============================================
+
+model SensorReading {
+  id             String @id @default(cuid())
+  deviceId       String
+  device         Device @relation(fields: [deviceId], references: [id])
+  moisture       Float?
+  temperature    Float?
+  ph             Float?
+  ec             Float?
+  npk            Float?
+  battery        Float?
+  signalStrength Int?   @map("signal_strength")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([deviceId])
+  @@index([createdAt])
+  @@map("sensor_readings")
+}
+
+// ============================================
+// IRRIGATION
+// ============================================
+
+model IrrigationEvent {
+  id          String           @id @default(cuid())
+  zoneId      String
+  zone        Zone             @relation(fields: [zoneId], references: [id])
+  deviceId    String?
+  device      Device?          @relation(fields: [deviceId], references: [id])
+  startedAt   DateTime         @map("started_at")
+  endedAt     DateTime?        @map("ended_at")
+  durationSec Int?             @map("duration_sec")
+  status      IrrigationStatus
+  source      IrrigationSource
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("irrigation_events")
+}
+
+model IrrigationSchedule {
+  id        String   @id @default(cuid())
+  zoneId    String
+  zone      Zone     @relation(fields: [zoneId], references: [id])
+  startTime String   @map("start_time") // "06:00"
+  duration  Int      // minutes
+  days      String[] // ["mon","wed","fri"]
+  isActive  Boolean  @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([zoneId])
+  @@map("irrigation_schedules")
+}
+
+// ============================================
+// WEATHER
+// ============================================
+
+model WeatherForecast {
+  id            String   @id @default(cuid())
+  zoneId        String
+  zone          Zone     @relation(fields: [zoneId], references: [id])
+  temperature   Float
+  humidity      Float
+  precipitation Float
+  windSpeed     Float    @map("wind_speed")
+  et0           Float
+  forecastDate  DateTime @map("forecast_date")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([zoneId, forecastDate])
+  @@map("weather_forecasts")
+}
+
+// ============================================
+// NOTIFICATIONS / ALERTS
+// ============================================
+
+model Notification {
+  id      String           @id @default(cuid())
+  userId  String
+  user    User             @relation(fields: [userId], references: [id])
+  type    NotificationType
+  title   String
+  message String
+  isRead  Boolean          @default(false) @map("is_read")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// MARKETPLACE (B2B)
+// ============================================
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  EXPIRED
+  CANCELLED
+}
+
+enum ListingCategory {
+  SEEDS
+  FERTILIZERS
+  PESTICIDES
+  EQUIPMENT
+  IRRIGATION
+  SERVICES
+  PRODUCE
+  GRAINS
+  FRUITS
+  VEGETABLES
+  LIVESTOCK
+}
+
+model Listing {
+  id              String          @id @default(cuid())
+  sellerId        String
+  seller          User            @relation(fields: [sellerId], references: [id])
+  title           String
+  description     String?
+  category        ListingCategory @default(PRODUCE)
+  brand           String?
+  price           Float
+  originalPrice   Float?          @map("original_price")
+  discountPercent Float?          @map("discount_percent")
+  unit            String
+  quantity        Float
+  region          String
+  zoneId          String?         @map("zone_id")
+  cropType        String?         @map("crop_type")
+  imageUrl        String?         @map("image_url")
+  rating          Float           @default(0)
+  reviewCount     Int             @default(0) @map("review_count")
+  isFeatured      Boolean         @default(false) @map("is_featured")
+  viewCount       Int             @default(0) @map("view_count")
+  status          ListingStatus   @default(ACTIVE)
+
+  sensorSnapshot ListingSensorSnapshot?
+  cartItems      CartItem[]
+  favorites      Favorite[]
+  orders         Order[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([region, status, category])
+  @@index([sellerId])
+  @@index([isFeatured, status])
+  @@map("listings")
+}
+
+model ListingSensorSnapshot {
+  id        String  @id @default(cuid())
+  listingId String  @unique
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  zoneId    String  @map("zone_id")
+  data      Json    // 30-day sensor summary for buyer trust
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("listing_sensor_snapshots")
+}
+
+enum OrderStatus {
+  PENDING
+  ESCROW_FUNDED
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  orderNumber String      @unique @map("order_number")
+  listingId   String
+  listing     Listing     @relation(fields: [listingId], references: [id])
+  buyerId     String
+  buyer       User        @relation("BuyerOrders", fields: [buyerId], references: [id])
+  quantity    Float
+  unitPrice   Float       @map("unit_price")
+  totalPrice  Float       @map("total_price")
+  currency    String      @default("UZS")
+  status      OrderStatus @default(PENDING)
+  notes       String?
+
+  escrow   EscrowPayment?
+  contract B2BContract?
+  shipment Shipment?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([buyerId, status])
+  @@index([listingId])
+  @@map("orders")
+}
+
+enum EscrowStatus {
+  PENDING
+  FUNDED
+  RELEASED
+  REFUNDED
+}
+
+model EscrowPayment {
+  id         String       @id @default(cuid())
+  orderId    String       @unique
+  order      Order        @relation(fields: [orderId], references: [id])
+  amount     Float
+  currency   String       @default("UZS")
+  status     EscrowStatus @default(PENDING)
+  fundedAt   DateTime?    @map("funded_at")
+  releasedAt DateTime?    @map("released_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("escrow_payments")
+}
+
+// ============================================
+// LOGISTICS
+// ============================================
+
+enum VehicleType {
+  TRUCK_10T
+  TRUCK_20T
+  REFRIGERATED
+  VAN
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  ON_ROUTE
+  MAINTENANCE
+  OFFLINE
+}
+
+model Vehicle {
+  id               String        @id @default(cuid())
+  plateNumber      String        @unique @map("plate_number")
+  name             String?
+  type             VehicleType
+  capacityTons     Float         @map("capacity_tons")
+  hasRefrigeration Boolean       @default(false) @map("has_refrigeration")
+  status           VehicleStatus @default(AVAILABLE)
+  fuelPercent      Int           @default(100) @map("fuel_percent")
+  currentLat       Float?        @map("current_lat")
+  currentLng       Float?        @map("current_lng")
+  currentLocation  String?       @map("current_location")
+
+  driverId  String? @unique
+  driver    Driver? @relation(fields: [driverId], references: [id])
+  shipments Shipment[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("vehicles")
+}
+
+model Driver {
+  id         String  @id @default(cuid())
+  fullName   String  @map("full_name")
+  phone      String  @unique
+  telegramId BigInt? @unique @map("telegram_id")
+  isVerified Boolean @default(false) @map("is_verified")
+
+  vehicle   Vehicle?
+  shipments Shipment[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("drivers")
+}
+
+enum ShipmentStatus {
+  PENDING_DRIVER
+  DRIVER_ASSIGNED
+  EN_ROUTE_TO_PICKUP
+  LOADING
+  IN_TRANSIT
+  ARRIVED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  COLD_CHAIN_ALERT
+}
+
+model Shipment {
+  id              String         @id @default(cuid())
+  trackId         String         @unique @map("track_id")
+  orderId         String?        @unique @map("order_id")
+  order           Order?         @relation(fields: [orderId], references: [id])
+  driverId        String?
+  driver          Driver?        @relation(fields: [driverId], references: [id])
+  vehicleId       String?
+  vehicle         Vehicle?       @relation(fields: [vehicleId], references: [id])
+
+  originLat       Float          @map("origin_lat")
+  originLng       Float          @map("origin_lng")
+  originAddress   String         @map("origin_address")
+  destLat         Float          @map("dest_lat")
+  destLng         Float          @map("dest_lng")
+  destAddress     String         @map("dest_address")
+
+  cargoType       String         @map("cargo_type")
+  weightTons      Float          @map("weight_tons")
+  freightCost     Float          @map("freight_cost")
+  currency        String         @default("USD")
+
+  status          ShipmentStatus @default(PENDING_DRIVER)
+  tempCelsius     Float?         @map("temp_celsius")
+  tempMaxAllowed  Float          @default(5) @map("temp_max_allowed")
+  progressPercent Int            @default(0) @map("progress_percent")
+  distanceKm      Float?         @map("distance_km")
+  etaAt           DateTime?      @map("eta_at")
+
+  trackingPoints ShipmentTracking[]
+  documents      ShipmentDocument[]
+
+  startedAt   DateTime? @map("started_at")
+  deliveredAt DateTime? @map("delivered_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([trackId])
+  @@map("shipments")
+}
+
+model ShipmentTracking {
+  id          String   @id @default(cuid())
+  shipmentId  String
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  lat         Float
+  lng         Float
+  tempCelsius Float?   @map("temp_celsius")
+  recordedAt  DateTime @default(now()) @map("recorded_at")
+
+  @@index([shipmentId, recordedAt])
+  @@map("shipment_tracking")
+}
+
+enum ShipmentDocumentType {
+  WAYBILL
+  CUSTOMS
+  PHYTOSANITARY
+  DELIVERY_PROOF
+  INSURANCE
+}
+
+model ShipmentDocument {
+  id         String               @id @default(cuid())
+  shipmentId String
+  shipment   Shipment             @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  type       ShipmentDocumentType
+  fileUrl    String?              @map("file_url")
+  metadata   Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("shipment_documents")
+}
+
+model Warehouse {
+  id          String @id @default(cuid())
+  name        String
+  region      String
+  latitude    Float
+  longitude   Float
+  capacityPct Float  @map("capacity_pct")
+  stockValue  Float  @map("stock_value")
+  currency    String @default("USD")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([region])
+  @@map("warehouses")
+}
+
+model LogisticsRoute {
+  id            String @id @default(cuid())
+  origin        String
+  destination   String
+  shipmentCount Int    @default(0) @map("shipment_count")
+  avgTravelHours Float @map("avg_travel_hours")
+  onTimePercent Float  @map("on_time_percent")
+  distanceKm    Float  @map("distance_km")
+
+  @@unique([origin, destination])
+  @@map("logistics_routes")
+}
+
+model LogisticsCostSnapshot {
+  id        String @id @default(cuid())
+  period    String
+  total     Float
+  fuel      Float
+  transport Float
+  warehouse Float
+  other     Float
+  currency  String @default("USD")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([period])
+  @@map("logistics_cost_snapshots")
+}
+
+// ============================================
+// FINANCE / FINTECH
+// ============================================
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionCategory {
+  CROP_SALE
+  MARKETPLACE
+  FERTILIZER
+  PESTICIDE
+  FUEL
+  LABOR
+  EQUIPMENT
+  IRRIGATION
+  LOGISTICS
+  CREDIT
+  OTHER
+}
+
+model Transaction {
+  id          String              @id @default(cuid())
+  userId      String
+  user        User                @relation(fields: [userId], references: [id])
+  type        TransactionType
+  category    TransactionCategory
+  amount      Float
+  currency    String              @default("UZS")
+  description String?
+  referenceId String?             @map("reference_id") // orderId, shipmentId
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, type])
+  @@index([createdAt])
+  @@map("transactions")
+}
+
+model Budget {
+  id       String              @id @default(cuid())
+  userId   String
+  user     User                @relation(fields: [userId], references: [id])
+  category TransactionCategory
+  limitAmount Float            @map("limit_amount")
+  spent    Float               @default(0)
+  period   String              // "2026-Q2", "2026-05"
+  isActive Boolean             @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, category, period])
+  @@map("budgets")
+}
+
+model AgroScore {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  score        Float    // 1.0 - 5.0
+  sensorUptime Float    @map("sensor_uptime") // %
+  irrigationScore Float @map("irrigation_score")
+  alertPenalty Float    @map("alert_penalty")
+  period       String   // "2026-05"
+
+  calculatedAt DateTime @default(now()) @map("calculated_at")
+
+  @@unique([userId, period])
+  @@map("agro_scores")
+}
+
+enum CreditStatus {
+  LOCKED
+  AVAILABLE
+  APPLIED
+  APPROVED
+  REJECTED
+  DISBURSED
+}
+
+model CreditProduct {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  maxAmount   Float   @map("max_amount")
+  currency    String  @default("UZS")
+  minScore    Float   @map("min_score") // required AgroScore
+
+  applications CreditApplication[]
+
+  @@map("credit_products")
+}
+
+model CreditApplication {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  productId String
+  product   CreditProduct @relation(fields: [productId], references: [id])
+  amount    Float
+  status    CreditStatus @default(APPLIED)
+  scoreAtApply Float     @map("score_at_apply")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, status])
+  @@map("credit_applications")
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+enum CropStatus {
+  ACTIVE
+  HARVESTED
+  FAILED
+}
+
+model CropBatch {
+  id              String     @id @default(cuid())
+  zoneId          String
+  zone            Zone       @relation(fields: [zoneId], references: [id])
+  cropType        String
+  variety         String?
+  plantedAt       DateTime   @map("planted_at")
+  harvestedAt     DateTime?  @map("harvested_at")
+  areaHectares    Float      @map("area_hectares")
+  expectedYieldKg Float?     @map("expected_yield_kg")
+  actualYieldKg   Float?     @map("actual_yield_kg")
+  status          CropStatus @default(ACTIVE)
+
+  productSales   ProductSale[]
+  inventoryItems InventoryItem[]
+
+  @@index([zoneId, status])
+  @@map("crop_batches")
+}
+
+enum SaleChannel {
+  DIRECT
+  MARKETPLACE
+  CLUSTER
+  EXPORT
+}
+
+model ProductSale {
+  id           String      @id @default(cuid())
+  cropBatchId  String
+  cropBatch    CropBatch   @relation(fields: [cropBatchId], references: [id])
+  soldAt       DateTime    @default(now()) @map("sold_at")
+  quantityKg   Float       @map("quantity_kg")
+  unitPrice    Float       @map("unit_price")
+  totalRevenue Float       @map("total_revenue")
+  buyerName    String?     @map("buyer_name")
+  channel      SaleChannel @default(DIRECT)
+
+  @@index([cropBatchId, soldAt])
+  @@map("product_sales")
+}
+
+enum InventoryItemType {
+  SEED
+  FERTILIZER
+  PESTICIDE
+  EQUIPMENT
+}
+
+model InventoryItem {
+  id              String            @id @default(cuid())
+  cropBatchId     String
+  cropBatch       CropBatch         @relation(fields: [cropBatchId], references: [id])
+  itemType        InventoryItemType
+  name            String
+  currentStock    Float             @map("current_stock")
+  unit            String
+  reorderLevel    Float?            @map("reorder_level")
+  lastRestockedAt DateTime?         @map("last_restocked_at")
+
+  @@index([cropBatchId, itemType])
+  @@map("inventory_items")
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  WHOLESALER
+  RETAILER
+  EXPORTER
+}
+
+model Customer {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  name           String
+  phone          String?
+  type           CustomerType @default(INDIVIDUAL)
+  totalPurchases Float        @default(0) @map("total_purchases")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, type])
+  @@map("customers")
+}
+
+model AnalyticsSnapshot {
+  id              String   @id @default(cuid())
+  zoneId          String
+  zone            Zone     @relation(fields: [zoneId], references: [id])
+  date            DateTime @db.Date
+  avgMoisture     Float?
+  avgTemperature  Float?   @map("avg_temperature")
+  avgPh           Float?
+  irrigationCount Int      @default(0) @map("irrigation_count")
+  waterUsedLiters Float    @default(0) @map("water_used_liters")
+  et0Mm           Float?
+
+  @@unique([zoneId, date])
+  @@index([date])
+  @@map("analytics_snapshots")
+}
+
+enum ReportType {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  CUSTOM
+}
+
+enum ReportFormat {
+  PDF
+  CSV
+  JSON
+}
+
+model Report {
+  id       String       @id @default(cuid())
+  userId   String
+  user     User         @relation(fields: [userId], references: [id])
+  zoneId   String?
+  type     ReportType
+  format   ReportFormat @default(PDF)
+  title    String
+  data     Json?
+  fileUrl  String?      @map("file_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("reports")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum NotificationType {
+  ALERT
+  IRRIGATION
+  WEATHER
+  SYSTEM
+  LOGISTICS
+  FINANCE
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+}
+
+enum IrrigationStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum IrrigationSource {
+  MANUAL
+  AI
+  SCHEDULE
+}
+
+// ============================================
+// MARKETPLACE ADDITIONS
+// ============================================
+
+model CatalogProduct {
+  id              String          @id @default(cuid())
+  name            String
+  brand           String
+  category        ListingCategory
+  price           Float
+  originalPrice   Float?          @map("original_price")
+  discountPercent Float?          @map("discount_percent")
+  unit            String          @default("pack")
+  rating          Float           @default(4.5)
+  reviewCount     Int             @default(0) @map("review_count")
+  badge           String?
+  imageUrl        String?         @map("image_url")
+  isActive        Boolean         @default(true) @map("is_active")
+  stock           Int             @default(100)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([category, isActive])
+  @@map("catalog_products")
+}
+
+model ServiceOffering {
+  id          String  @id @default(cuid())
+  name        String
+  description String
+  price       Float
+  unit        String
+  isActive    Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("service_offerings")
+}
+
+model Promotion {
+  id          String  @id @default(cuid())
+  title       String
+  subtitle    String?
+  ctaLabel    String  @map("cta_label")
+  ctaAction   String  @map("cta_action")
+  imageUrl    String? @map("image_url")
+  color       String  @default("#10B981")
+  sortOrder   Int     @default(0) @map("sort_order")
+  isActive    Boolean @default(true) @map("is_active")
+
+  @@map("promotions")
+}
+
+model Cart {
+  id     String     @id @default(cuid())
+  userId String     @unique
+  user   User       @relation(fields: [userId], references: [id])
+  items  CartItem[]
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id])
+  quantity  Float
+
+  @@unique([cartId, listingId])
+  @@map("cart_items")
+}
+
+model Favorite {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  listingId String
+  listing   Listing @relation(fields: [listingId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, listingId])
+  @@map("favorites")
+}
+
+model B2BContract {
+  id        String   @id @default(cuid())
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id])
+  terms     Json
+  signedAt  DateTime @default(now()) @map("signed_at")
+
+  @@map("b2b_contracts")
+}

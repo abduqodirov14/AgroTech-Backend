@@ -1,6 +1,6 @@
 import prisma from '../database/prismaClient';
-import { ISensorRepository, CreateSensorReadingDTO } from '../../domain/repositories/ISensorRepository';
-import { SensorReading } from '../../domain/entities/SensorReading';
+import { ISensorRepository } from '../../domain/repositories/ISensorRepository';
+import { SensorReading, CreateSensorReadingDTO } from '../../domain/entities/SensorReading';
 
 export class SensorRepository implements ISensorRepository {
   async create(data: CreateSensorReadingDTO): Promise<SensorReading> {

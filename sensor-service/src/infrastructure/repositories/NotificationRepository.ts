@@ -1,4 +1,4 @@
-import { prisma } from '../infrastructure/database/prismaClient';
+import prisma from '../database/prismaClient';
 import { NotificationType } from '@prisma/client';
 
 export interface NotificationRow {

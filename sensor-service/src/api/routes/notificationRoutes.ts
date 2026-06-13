@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { NotificationRepository } from '../infrastructure/repositories/NotificationRepository';
+import { NotificationRepository } from '../../infrastructure/repositories/NotificationRepository';
 import { NotificationType } from '@prisma/client';
 
 const router = Router();

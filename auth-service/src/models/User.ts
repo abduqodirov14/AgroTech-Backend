@@ -7,6 +7,6 @@ export type { User } from '@prisma/client';
 export interface CreateUserInput {
   phone: string;
   telegramId: bigint;
-  name: string;
+  fullName: string;
   username?: string;
 }

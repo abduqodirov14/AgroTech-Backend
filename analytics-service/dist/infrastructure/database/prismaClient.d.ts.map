@@ -1,0 +1,1 @@
+{"version":3,"file":"prismaClient.d.ts","sourceRoot":"","sources":["../../../src/infrastructure/database/prismaClient.ts"],"names":[],"mappings":"AAAA;;;;GAIG;AAEH,OAAO,EAAE,YAAY,EAAE,MAAM,gBAAgB,CAAC;AAE9C,QAAA,MAAM,YAAY,gIAAqB,CAAC;AAExC,eAAe,YAAY,CAAC"}

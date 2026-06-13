@@ -1,6 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import sensorRoutes from './api/routes/sensorRoutes';
+import deviceRoutes from './api/routes/deviceRoutes';
+import notificationRoutes from './api/routes/notificationRoutes';
+import { authenticateUser } from './middleware/authenticateUser';
+import { authenticateDevice } from './middleware/authenticateDevice';
 import { logger } from './utils/logger';
 
 const app = express();
@@ -17,7 +21,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/api/v1/sensors', sensorRoutes);
+app.use('/api/v1/sensors', authenticateDevice, sensorRoutes);
+app.use('/api/v1/devices', deviceRoutes);
+app.use('/api/v1/notifications', authenticateUser, notificationRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'sensor-service' });

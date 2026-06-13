@@ -12,7 +12,7 @@ export const generateToken = (user: User): string => {
   const payload: JwtPayload = {
     userId: user.id,
     phone: user.phone,
-    telegramId: user.telegramId.toString(),
+    telegramId: user.telegramId?.toString() ?? '',
   };
 
   return jwt.sign(payload, env.JWT_SECRET, {

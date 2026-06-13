@@ -6,6 +6,7 @@ import { env } from './config/env';
 import { logger, logRequest } from './utils/logger';
 import { AppError } from './utils/errors';
 import authRoutes from './api/routes/authRoutes';
+import deviceRoutes from './api/routes/deviceRoutes';
 
 // Express app yaratish
 export const app: Application = express();
@@ -63,6 +64,7 @@ app.get('/health', (req: Request, res: Response) => {
  * API Routes
  */
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/auth/devices', deviceRoutes);
 
 /**
  * 404 Handler

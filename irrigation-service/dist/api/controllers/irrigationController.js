@@ -44,6 +44,23 @@ class IrrigationController {
             });
         }
     }
+    async zoneById(req, res) {
+        try {
+            const zone = await this.toggleIrrigationUseCase.getZoneById(req.params.zone_id);
+            if (!zone) {
+                res.status(404).json({ success: false, message: 'Zone not found' });
+                return;
+            }
+            res.status(200).json({ success: true, data: zone });
+        }
+        catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch zone',
+                error: error.message,
+            });
+        }
+    }
     async addZone(req, res) {
         try {
             const { name, area, soil_type, irrigation_type, device_id, crop_type, duration_minutes } = req.body;
@@ -74,7 +91,8 @@ class IrrigationController {
                 valve_state: 'OFF',
                 last_irrigation: null,
                 duration_minutes: duration_minutes ?? 30,
-                moisture: Math.round(40 + Math.random() * 20),
+                moisture_0_30: Math.round(40 + Math.random() * 20),
+                moisture_30_60: Math.round(40 + Math.random() * 20),
                 ph: Math.round((6.0 + Math.random() * 1.0) * 100) / 100,
                 temperature: Math.round((22 + Math.random() * 4) * 10) / 10,
                 next_irrigation: 'Not scheduled',

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { SensorRepository } from '../../infrastructure/repositories/SensorRepository';
 import { authenticateDevice } from '../../middleware/authenticateDevice';
+import { logger } from '../../utils/logger';
 
 const router = Router();
 const sensorRepository = new SensorRepository();
@@ -36,7 +37,7 @@ router.post('/upload', authenticateDevice, async (req: Request, res: Response) =
     const parsed = uploadSchema.safeParse(req.body);
 
     if (!parsed.success) {
-      logger.warn(`[HTTP][ERROR] Validation failed deviceMac=${deviceMac} error=${parsed.error.flatten().message}`);
+      logger.warn(`[HTTP][ERROR] Validation failed deviceMac=${deviceMac} error=${parsed.error.issues[0]?.message || 'Validation failed'}`);
       return res.status(400).json({
         success: false,
         error: 'Validation failed',

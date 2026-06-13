@@ -102,16 +102,9 @@ export class ZoneRepository implements IZoneRepository {
   }
 
   async updateValveState(zoneId: string, _valveState: string): Promise<void> {
-    await prisma.zone.update({
-      where: { id: zoneId },
-      data: {
-        devices: {
-          update: {
-            where: { zoneId },
-            data: { status: DeviceStatus.ONLINE },
-          },
-        },
-      },
+    await prisma.device.updateMany({
+      where: { zoneId },
+      data: { status: DeviceStatus.ONLINE },
     });
   }
 }

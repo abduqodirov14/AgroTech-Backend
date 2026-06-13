@@ -11,28 +11,36 @@ datasource db {
 // AUTH / USER
 // ============================================
 
-model User {
-  id          String    @id @default(cuid())
-  phone       String    @unique
-  telegramId  BigInt?   @unique @map("telegram_id")
-  fullName    String    @map("full_name")
-  username    String?
-  lastLogin   DateTime? @map("last_login")
+enum UserRole {
+  FARMER
+  BUYER
+  DRIVER
+  LOGISTICS_ADMIN
+  ADMIN
+}
 
-  sessions    AuthSession[]
+model User {
+  id         String    @id @default(cuid())
+  phone      String    @unique
+  telegramId BigInt?   @unique @map("telegram_id")
+  fullName   String    @map("full_name")
+  username   String?
+  role       UserRole  @default(FARMER)
+  lastLogin  DateTime? @map("last_login")
+
   zones       Zone[]
   notifications Notification[]
+  deviceOwnerships DeviceOwnership[]
 
-  createdAt   DateTime  @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("users")
 }
 
 model AuthSession {
-  id         String   @id @default(cuid())
-  userId     String?
-  user       User?    @relation(fields: [userId], references: [id])
+  id         String   @id @default(uuid())
   phone      String
+  telegramId BigInt?  @map("telegram_id")
   code       String
   expiresAt  DateTime @map("expires_at")
   isUsed     Boolean  @default(false) @map("is_used")
@@ -48,40 +56,56 @@ model AuthSession {
 // ============================================
 
 model Zone {
-  id          String   @id @default(cuid())
-  name        String
-  latitude    Float
-  longitude   Float
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  id        String @id @default(cuid())
+  name      String
+  latitude  Float
+  longitude Float
+  userId    String
+  user      User   @relation(fields: [userId], references: [id])
 
-  devices     Device[]
-  events      IrrigationEvent[]
-  forecasts   WeatherForecast[]
+  devices   Device[]
+  events    IrrigationEvent[]
+  forecasts WeatherForecast[]
 
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@index([userId])
   @@map("zones")
 }
 
 model Device {
-  id          String    @id @default(cuid())
+  id         String       @id @default(cuid())
+  macAddress String       @unique @map("mac_address")
+  macHash    String       @unique @map("mac_hash")
+  name       String?
+  secretKey  String       @map("secret_key")
+  status     DeviceStatus @default(OFFLINE)
+  lastSeen   DateTime?    @map("last_seen")
 
-  macAddress  String    @unique @map("mac_address")
-  name        String?
-  secretKey   String    @map("secret_key")
-  status      DeviceStatus @default(OFFLINE)
+  zoneId String
+  zone   Zone   @relation(fields: [zoneId], references: [id])
 
-  zoneId      String
-  zone        Zone      @relation(fields: [zoneId], references: [id])
+  readings SensorReading[]
+  events   IrrigationEvent[]
 
-  readings    SensorReading[]
-  events      IrrigationEvent[]
+  ownerships DeviceOwnership[]
 
-  createdAt   DateTime  @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("devices")
+}
+
+model DeviceOwnership {
+  id       String  @id @default(cuid())
+  deviceId String
+  device   Device  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isOwner  Boolean @default(true) @map("is_owner")
+
+  @@unique([deviceId, userId])
+  @@index([userId])
+  @@map("device_ownerships")
 }
 
 // ============================================
@@ -89,20 +113,20 @@ model Device {
 // ============================================
 
 model SensorReading {
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  deviceId      String
-  device        Device   @relation(fields: [deviceId], references: [id])
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id])
 
-  moisture      Float?
-  temperature   Float?
-  ph            Float?
-  ec            Float?
-  npk           Float?
-  battery       Float?
-  signalStrength Int?    @map("signal_strength")
+  moisture       Float?
+  temperature    Float?
+  ph             Float?
+  ec             Float?
+  npk            Float?
+  battery        Float?
+  signalStrength Int?   @map("signal_strength")
 
-  createdAt     DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@index([deviceId])
   @@index([createdAt])
@@ -114,23 +138,23 @@ model SensorReading {
 // ============================================
 
 model IrrigationEvent {
-  id            String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  zoneId        String
-  zone          Zone     @relation(fields: [zoneId], references: [id])
+  zoneId String
+  zone   Zone   @relation(fields: [zoneId], references: [id])
 
-  deviceId      String?
-  device        Device?  @relation(fields: [deviceId], references: [id])
+  deviceId String?
+  device   Device? @relation(fields: [deviceId], references: [id])
 
-  startedAt     DateTime @map("started_at")
-  endedAt       DateTime? @map("ended_at")
+  startedAt DateTime  @map("started_at")
+  endedAt   DateTime? @map("ended_at")
 
-  durationSec   Int?     @map("duration_sec")
+  durationSec Int? @map("duration_sec")
 
-  status        IrrigationStatus
-  source        IrrigationSource
+  status IrrigationStatus
+  source IrrigationSource
 
-  createdAt     DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@map("irrigation_events")
 }
@@ -140,19 +164,19 @@ model IrrigationEvent {
 // ============================================
 
 model WeatherForecast {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  zoneId          String
-  zone            Zone     @relation(fields: [zoneId], references: [id])
+  zoneId String
+  zone   Zone   @relation(fields: [zoneId], references: [id])
 
-  temperature     Float
-  humidity        Float
-  precipitation   Float
-  windSpeed       Float   @map("wind_speed")
-  et0             Float
-  forecastDate    DateTime @map("forecast_date")
+  temperature   Float
+  humidity      Float
+  precipitation Float
+  windSpeed     Float    @map("wind_speed")
+  et0           Float
+  forecastDate  DateTime @map("forecast_date")
 
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@index([zoneId, forecastDate])
   @@map("weather_forecasts")
@@ -163,17 +187,17 @@ model WeatherForecast {
 // ============================================
 
 model Notification {
-  id          String    @id @default(cuid())
+  id String @id @default(cuid())
 
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  type        NotificationType
-  title       String
-  message     String
-  isRead      Boolean  @default(false) @map("is_read")
+  type    NotificationType
+  title   String
+  message String
+  isRead  Boolean          @default(false) @map("is_read")
 
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@index([userId, isRead])
   @@index([createdAt])
