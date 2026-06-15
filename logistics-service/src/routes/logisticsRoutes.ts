@@ -13,7 +13,10 @@ router.get('/overview', async (_req, res, next) => {
   try {
     const data = await shipmentService.getOverview();
     res.json({ success: true, data });
-  } catch (e) { next(e); }
+  } catch (e) {
+    console.error('[logisticsRoutes:overview] error', e);
+    next(e);
+  }
 });
 
 router.get('/shipments', async (req, res, next) => {
@@ -21,7 +24,10 @@ router.get('/shipments', async (req, res, next) => {
     const filter = req.query.filter as 'active' | 'delivered' | 'all' | undefined;
     const data = await shipmentService.listShipments(filter);
     res.json({ success: true, data });
-  } catch (e) { next(e); }
+  } catch (e) {
+    console.error('[logisticsRoutes:shipments] error', e);
+    next(e);
+  }
 });
 
 router.get('/track/:trackId', async (req, res, next) => {
@@ -35,6 +41,23 @@ router.post('/shipments', async (req, res, next) => {
   try {
     const data = await shipmentService.createShipment(req.body);
     res.status(201).json({ success: true, data });
+  } catch (e) {
+    console.error('[logisticsRoutes:shipments] error', e);
+    next(e);
+  }
+});
+
+router.post('/shipments/create', async (req, res, next) => {
+  try {
+    const data = await shipmentService.createShipment(req.body);
+    res.status(201).json({ success: true, data });
+  } catch (e) { next(e); }
+});
+
+router.get('/track/:trackId', async (req, res, next) => {
+  try {
+    const data = await shipmentService.getShipmentByTrackId(req.params.trackId);
+    res.json({ success: true, data });
   } catch (e) { next(e); }
 });
 
@@ -81,7 +104,10 @@ router.get('/vehicles', async (_req, res, next) => {
   try {
     const data = await shipmentService.listVehicles();
     res.json({ success: true, data });
-  } catch (e) { next(e); }
+  } catch (e) {
+    console.error('[logisticsRoutes:vehicles] error', e);
+    next(e);
+  }
 });
 
 router.get('/warehouses', async (_req, res, next) => {

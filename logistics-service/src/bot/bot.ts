@@ -1,92 +1,104 @@
-import TelegramBot from 'node-telegram-bot-api';
-import { env } from '../../config/env';
-import { handleDriverStart } from '../handlers/driverStartHandler';
-import { handleDriverContact } from '../handlers/driverContactHandler';
-import { handleDriverMessage } from '../handlers/driverMessageHandler';
-import { handleCallbackQuery } from '../handlers/driverCallbackHandler';
-import { getLogisticsServiceClient } from '../services/driverLogicService';
-import { logger } from '../../utils/logger';
+import TelegramBot from "node-telegram-bot-api";
+import { env } from "../config/env";
+import { logger } from "../utils/logger";
+import { statusKeyboard } from "./keyboards/driverKeyboards";
 
-let bot: TelegramBot | null = null;
-let logisticsServiceClient: unknown = null;
+export type DriverStatus = "available" | "offline" | "assigned" | "in_transit" | "arrived";
 
-export const getLogisticsServiceClient = () => logisticsServiceClient;
-export const setLogisticsServiceClient = (client: unknown) => {
-  logisticsServiceClient = client;
-};
+function normalizeWhitespace(text: string) {
+  return text.replace(/\\s+/g, " ").trim();
+}
 
-export const initializeLogisticsBot = () => {
-  try {
-    if (!env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN.length < 20) {
-      throw new Error('Invalid TELEGRAM_LOGISTICS_BOT_TOKEN in .env file');
-    }
+const REQUIRED_START_PROMPT = normalizeWhitespace(`
+🚛 AgroHub Logistics botiga xush kelibsiz! Telefon raqamingizni yuboring:
+`);
 
-    bot = new TelegramBot(env.TELEGRAM_BOT_TOKEN, {
-      polling: {
-        interval: 300,
-        autoStart: true,
-        params: {
-          timeout: 10,
-        },
-      },
-    });
-
-    bot.on('polling_error', (error: any) => {
-      logger.error('Logistics bot polling error', {
-        error: error?.message || 'Unknown error',
-        code: error?.code,
-      });
-    });
-
-    bot.on('message', async (msg) => {
-      try {
-        if (msg.text === '/start') {
-          await handleDriverStart(bot!, msg, getLogisticsServiceClient());
-        }
-        else if (msg.contact) {
-          await handleDriverContact(bot!, msg, getLogisticsServiceClient());
-        }
-        else if (msg.text && !msg.text.startsWith('/')) {
-          await handleDriverMessage(bot!, msg, getLogisticsServiceClient());
-        } else if (msg.location) {
-          await handleDriverLocation(msg.chat.id, msg.location);
-        } else if (msg.text?.startsWith('/')) {
-          await bot!.sendMessage(msg.chat.id, "Kerakli buyruq topilmadi. /start tugmasini bosing.");
-        }
-      } catch (error: any) {
-        logger.error('Logistics bot message handler error', {
-          error: error?.message || 'Unknown error',
-          chatId: msg.chat.id,
-        });
-      }
-    });
-
-    bot.on('callback_query', async (query) => {
-      try {
-        await handleCallbackQuery(bot!, query, getLogisticsServiceClient());
-      } catch (error: any) {
-        logger.error('Logistics bot callback error', {
-          error: error?.message || 'Unknown error',
-        });
-      }
-    });
-
-    logger.info('Logistics Telegram bot initialized successfully');
-  } catch (error: any) {
-    logger.error('Failed to initialize logistics bot', {
-      message: error?.message || 'Unknown error',
-    });
+export const initializeLogisticsBot = async () => {
+  const token = env.TELEGRAM_BOT_TOKEN || env.TELEGRAM_LOGISTICS_BOT_TOKEN;
+  if (!token || token.length < 20) {
+    logger.warn("Telegram bot token missing, skipping logistics bot initialization");
+    return;
   }
-};
 
-export const getLogisticsBot = () => bot;
-
-export const stopLogisticsBot = async () => {
   try {
-    if (bot) {
-      await bot.stopPolling();
+    const TelegramBotClass = require("node-telegram-bot-api").default || require("node-telegram-bot-api");
+
+    let bot: InstanceType<typeof TelegramBotClass>;
+    try {
+      bot = new TelegramBotClass(token, {
+        polling: { interval: 300, params: { timeout: 10 } },
+      }) as unknown as InstanceType<typeof TelegramBotClass>;
+    } catch (initError: unknown) {
+      logger.error("Failed to create Telegram bot instance", {
+        message: (initError as Error)?.message,
+        stack: (initError as Error)?.stack,
+      });
+      throw initError;
     }
-  } catch (e) {
-    // ignore
+
+    bot.on("polling_error", (error: unknown) => {
+      const reason = (error as Error)?.message || String(error);
+      if (/ECONNRESET|EFATAL/i.test(reason)) {
+        logger.warn("Telegram polling connection reset", { reason });
+      } else {
+        logger.error("Logistics bot polling error", { reason });
+      }
+    });
+
+    bot.on("message", async (msg) => {
+      try {
+        if (!msg.chat) return;
+
+        switch (msg.text) {
+          case "/start":
+            await bot.sendMessage(msg.chat.id, REQUIRED_START_PROMPT, {
+              reply_markup: {
+                keyboard: [[{ text: "📱 Kontaktni ulashish", request_contact: true }]],
+                resize_keyboard: true,
+                one_time_keyboard: true,
+              },
+            });
+            break;
+
+          default:
+            if (msg.contact) {
+              await bot.sendMessage(msg.chat.id, "Kontakt qabul qilindi. Tez orada bog'lanamiz!", {
+                reply_markup: { remove_keyboard: true },
+              });
+            } else if (msg.text && !msg.text.startsWith("/")) {
+              await bot.sendMessage(msg.chat.id, "Tushunarsiz buyruq. /start ni bosing.", {
+                reply_markup: statusKeyboard("available"),
+              });
+            }
+            break;
+        }
+      } catch (error: unknown) {
+        logger.error("Logistics bot message handler failed", {
+          message: (error as Error)?.message || "Unknown error",
+          stack: (error as Error)?.stack,
+          chatId: msg.chat?.id,
+        });
+      }
+    });
+
+    bot.on("callback_query", async (query) => {
+      try {
+        const { handleCallbackQuery } = await import("./handlers/driverCallbackHandler");
+        await handleCallbackQuery(bot as any, query);
+      } catch (error: unknown) {
+        logger.error("Logistics bot callback error", {
+          message: (error as Error)?.message || "Unknown error",
+          stack: (error as Error)?.stack,
+        });
+      }
+    });
+
+    logger.info("Logistics Telegram bot initialized successfully");
+  } catch (error: unknown) {
+    logger.error("Failed to initialize logistics bot", {
+      message: (error as Error)?.message,
+      stack: (error as Error)?.stack,
+      code: (error as { code?: string })?.code,
+    });
   }
 };

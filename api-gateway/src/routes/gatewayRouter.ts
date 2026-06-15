@@ -6,6 +6,7 @@
 
 import { Router, Request, Response } from 'express';
 import axios, { AxiosError } from 'axios';
+import logisticsRoutes from './logisticsRoutes';
 
 const router = Router();
 
@@ -78,12 +79,7 @@ router.get('/api/v1/auth/me', (req, res) =>
   proxyRequest(req, res, SERVICES.AUTH, '/api/v1/auth/me')
 );
 
-// ============================================
-// 💳 FINANCE SERVICE (3006) - CREDIT PRODUCTS
-// ============================================
-router.get('/api/v1/credit/score/:farmerId', (req, res) =>
-  proxyRequest(req, res, SERVICES.FINTECH, `/api/v1/credit/score/${req.params.farmerId}`)
-);
+router.use('/api/v1/logistics', logisticsRoutes);
 router.get('/api/v1/credit/products', (req, res) =>
   proxyRequest(req, res, SERVICES.FINTECH, '/api/v1/credit/products')
 );
@@ -94,9 +90,12 @@ router.get('/api/v1/credit/applications', (req, res) =>
   proxyRequest(req, res, SERVICES.FINTECH, '/api/v1/credit/applications')
 );
 
-// ============================================
-// 📦 LOGISTICS SERVICE (3008) - SHIPMENTS
-// ============================================
+router.get('/api/v1/logistics/overview', (req, res) =>
+  proxyRequest(req, res, SERVICES.LOGISTICS, '/api/v1/logistics/overview')
+);
+router.get('/api/v1/logistics/shipments', (req, res) =>
+  proxyRequest(req, res, SERVICES.LOGISTICS, '/api/v1/logistics/shipments')
+);
 router.get('/api/v1/logistics/shipments/:shipmentId', (req, res) =>
   proxyRequest(req, res, SERVICES.LOGISTICS, `/api/v1/logistics/shipments/${req.params.shipmentId}`)
 );
@@ -127,6 +126,17 @@ router.get('/api/v1/logistics/3pl/offers/:shipmentId', (req, res) =>
 );
 router.post('/api/v1/logistics/3pl/select', (req, res) =>
   proxyRequest(req, res, SERVICES.LOGISTICS, '/api/v1/logistics/3pl/select')
+);
+
+// 🚚 Additional logistics resources
+router.get('/api/v1/logistics/vehicles', (req, res) =>
+  proxyRequest(req, res, SERVICES.LOGISTICS, '/api/v1/logistics/vehicles')
+);
+router.get('/api/v1/logistics/routes', (req, res) =>
+  proxyRequest(req, res, SERVICES.LOGISTICS, '/api/v1/logistics/routes')
+);
+router.get('/api/v1/logistics/drivers/nearest', (req, res) =>
+  proxyRequest(req, res, SERVICES.LOGISTICS, '/api/v1/logistics/drivers/nearest')
 );
 
 // Analytics & Reports

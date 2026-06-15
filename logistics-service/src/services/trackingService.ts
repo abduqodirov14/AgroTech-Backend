@@ -213,6 +213,12 @@ export class TrackingService {
       await this.broadcastColdChainAlert(trackId, tempCelsius, shipment.tempMaxAllowed);
     }
   }
+
+  createRoom(trackId: string) {
+    this.io.emit('room:created', { trackId, room: `track-${trackId}` });
+    logger.info('Tracking room ready', { trackId, room: `track-${trackId}` });
+    return { success: true, trackId, room: `track-${trackId}` };
+  }
 }
 
 // Singleton instance

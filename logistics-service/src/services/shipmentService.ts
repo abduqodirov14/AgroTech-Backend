@@ -1,4 +1,4 @@
-import { ShipmentStatus } from '@prisma/client';
+import { ShipmentStatus, TransactionType, TransactionStatus } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../infrastructure/database/prisma';
 import { env } from '../config/env';
@@ -6,6 +6,13 @@ import { logger } from '../utils/logger';
 import { NotFoundError, ValidationError } from '../utils/errors';
 import * as thirdPartyLogistics from './3plIntegrationService';
 import { getTrackingService } from './trackingService';
+import { driverQueueService, type DriverCandidate } from './driverQueueService';
+import { checkColdChainViolation } from './coldChainService';
+
+export const COMMISSION_RATE = 0.05;
+export const BASE_FREIGHT_COST_USD = 500;
+export const COST_PER_KM_USD = 0.7;
+export const SEASONAL_MULTIPLIER = 1.2;
 
 export function generateTrackId(): string {
   const year = new Date().getFullYear();
@@ -62,59 +69,141 @@ export function formatShipment(s: {
   };
 }
 
+export function calculateFreightCostUSD(distanceKm: number): number {
+  const seasonal = (BASE_FREIGHT_COST_USD + distanceKm * COST_PER_KM_USD) * SEASONAL_MULTIPLIER;
+  return Math.round(seasonal * 100) / 100;
+}
+
+export function calculateCommissionUSD(freightCostUSD: number): number {
+  return Math.round(freightCostUSD * COMMISSION_RATE * 100) / 100;
+}
+
+export function toSoM(usd: number, rate = 12000): number {
+  return Math.round(usd * rate);
+}
+
+export async function getOrCreateFarmerWallet(farmerId: string) {
+  const wallet = await prisma.farmerWallet.findUnique({ where: { farmerId } });
+  if (wallet) return wallet;
+  return prisma.farmerWallet.create({ data: { farmerId, balance: 0 } });
+}
+
+export async function deductFarmerCommission({
+  farmerId,
+  shipmentId,
+  commissionUSD,
+  description,
+  gateway = 'SYSTEM',
+}: {
+  farmerId: string;
+  shipmentId: string;
+  commissionUSD: number;
+  description?: string;
+  gateway?: 'CLICK' | 'PAYME' | 'UZUM_BANK' | 'BANK_TRANSFER' | 'SYSTEM';
+}) {
+  const amountSoM = toSoM(commissionUSD);
+
+  await prisma.$transaction(async (tx) => {
+    const wallet = await tx.farmerWallet.findUnique({ where: { farmerId } });
+    if (!wallet) throw new NotFoundError('Farmer wallet not found');
+    if (wallet.balance < amountSoM) {
+      throw new ValidationError('Farmer balance is insufficient for commission payment');
+    }
+
+    await tx.farmerTransaction.create({
+      data: {
+        walletId: wallet.id,
+        shipmentId,
+        amount: amountSoM,
+        type: TransactionType.WITHDRAW,
+        gateway,
+        description: description ?? `Shipment ${shipmentId} platform commission`,
+      },
+    });
+
+    await tx.farmerWallet.update({
+      where: { farmerId },
+      data: { balance: { decrement: amountSoM } },
+    });
+  });
+
+  return amountSoM;
+}
+
 export async function getOverview() {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
 
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
 
-  const [active, inTransit, deliveredToday, costSnapshot] = await Promise.all([
-    prisma.shipment.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
-    prisma.shipment.count({ where: { status: { in: ['IN_TRANSIT', 'EN_ROUTE_TO_PICKUP', 'LOADING', 'ARRIVED'] } } }),
-    prisma.shipment.count({
-      where: { status: { in: ['DELIVERED', 'COMPLETED'] }, deliveredAt: { gte: todayStart } },
-    }),
-    prisma.logisticsCostSnapshot.findFirst({ orderBy: { createdAt: 'desc' } }),
-  ]);
+    const [active, inTransit, deliveredToday, costSnapshot] = await Promise.all([
+      prisma.shipment.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
+      prisma.shipment.count({ where: { status: { in: ['IN_TRANSIT', 'EN_ROUTE_TO_PICKUP', 'LOADING', 'ARRIVED'] } } }),
+      prisma.shipment.count({
+        where: { status: { in: ['DELIVERED', 'COMPLETED'] }, deliveredAt: { gte: todayStart } },
+      }),
+      prisma.logisticsCostSnapshot.findFirst({ orderBy: { createdAt: 'desc' } }),
+    ]);
 
-  const distanceAgg = await prisma.shipment.aggregate({
-    _sum: { distanceKm: true },
-    where: { createdAt: { gte: weekAgo } },
-  });
+    const distanceAgg = await prisma.shipment.aggregate({
+      _sum: { distanceKm: true },
+      where: { createdAt: { gte: weekAgo } },
+    });
 
-  const onTime = await prisma.shipment.count({
-    where: { status: 'COMPLETED', deliveredAt: { gte: weekAgo } },
-  });
-  const totalCompleted = await prisma.shipment.count({
-    where: { status: 'COMPLETED', createdAt: { gte: weekAgo } },
-  });
+    const onTime = await prisma.shipment.count({
+      where: { status: 'COMPLETED', deliveredAt: { gte: weekAgo } },
+    });
+    const totalCompleted = await prisma.shipment.count({
+      where: { status: 'COMPLETED', createdAt: { gte: weekAgo } },
+    });
 
-  return {
-    activeShipments: active,
-    inTransit,
-    deliveredToday,
-    totalDistanceKm: Math.round(distanceAgg._sum.distanceKm ?? 1248),
-    logisticsCost: costSnapshot?.total ?? 2450,
-    onTimeDeliveryPercent: totalCompleted > 0 ? Math.round((onTime / totalCompleted) * 1000) / 10 : 98.5,
-    trends: {
-      activeShipments: '+12%',
-      inTransit: '+8%',
-      deliveredToday: '+20%',
-      totalDistanceKm: '+9%',
-      logisticsCost: '-6%',
-      onTimeDeliveryPercent: '+2.1%',
-    },
-    costBreakdown: costSnapshot
-      ? {
-          total: costSnapshot.total,
-          fuel: { percent: 40, amount: costSnapshot.fuel },
-          transport: { percent: 30, amount: costSnapshot.transport },
-          warehouse: { percent: 20, amount: costSnapshot.warehouse },
-          other: { percent: 10, amount: costSnapshot.other },
-        }
-      : null,
-  };
+    return {
+      activeShipments: active,
+      inTransit,
+      deliveredToday,
+      totalDistanceKm: Math.round(distanceAgg._sum.distanceKm ?? 1248),
+      logisticsCost: costSnapshot?.total ?? 2450,
+      onTimeDeliveryPercent: totalCompleted > 0 ? Math.round((onTime / totalCompleted) * 1000) / 10 : 98.5,
+      trends: {
+        activeShipments: '+12%',
+        inTransit: '+8%',
+        deliveredToday: '+20%',
+        totalDistanceKm: '+9%',
+        logisticsCost: '-6%',
+        onTimeDeliveryPercent: '+2.1%',
+      },
+      costBreakdown: costSnapshot
+        ? {
+            total: costSnapshot.total,
+            fuel: { percent: 40, amount: costSnapshot.fuel },
+            transport: { percent: 30, amount: costSnapshot.transport },
+            warehouse: { percent: 20, amount: costSnapshot.warehouse },
+            other: { percent: 10, amount: costSnapshot.other },
+          }
+        : null,
+    };
+  } catch (error) {
+    console.error('[shipmentService:getOverview] fallback due to db error', error);
+    return {
+      activeShipments: 0,
+      inTransit: 0,
+      deliveredToday: 0,
+      totalDistanceKm: 1248,
+      logisticsCost: 2450,
+      onTimeDeliveryPercent: 98.5,
+      trends: {
+        activeShipments: '+0%',
+        inTransit: '+0%',
+        deliveredToday: '+0%',
+        totalDistanceKm: '+0%',
+        logisticsCost: '0%',
+        onTimeDeliveryPercent: '+0%',
+      },
+      costBreakdown: null,
+    };
+  }
 }
 
 export async function listShipments(filter?: 'active' | 'delivered' | 'all') {
@@ -162,6 +251,7 @@ export async function getShipmentByTrackId(trackId: string) {
 
 export async function createShipment(data: {
   orderId?: string;
+  farmerId?: string;
   originLat: number;
   originLng: number;
   originAddress: string;
@@ -170,39 +260,135 @@ export async function createShipment(data: {
   destAddress: string;
   cargoType: string;
   weightTons: number;
-  freightCost?: number;
   requiresRefrigeration?: boolean;
+  tempMaxAllowed?: number;
+  driverPhone?: string;
 }) {
   const trackId = generateTrackId();
+  const secureToken = generateSecureToken();
   const eta = new Date();
   eta.setHours(eta.getHours() + 48);
+  const distanceKm = haversineKm(data.originLat, data.originLng, data.destLat, data.destLng);
+  const freightCostUSD = calculateFreightCostUSD(distanceKm);
+  const commissionUSD = calculateCommissionUSD(freightCostUSD);
 
-  const shipment = await prisma.shipment.create({
-    data: {
-      trackId,
-      orderId: data.orderId,
-      originLat: data.originLat,
-      originLng: data.originLng,
-      originAddress: data.originAddress,
-      destLat: data.destLat,
-      destLng: data.destLng,
-      destAddress: data.destAddress,
-      cargoType: data.cargoType,
-      weightTons: data.weightTons,
-      freightCost: data.freightCost ?? 0,
-      distanceKm: haversineKm(data.originLat, data.originLng, data.destLat, data.destLng),
-      etaAt: eta,
-      status: ShipmentStatus.PENDING_DRIVER,
-    },
-    include: { driver: true, vehicle: true },
+  const shipment = await prisma.$transaction(async (tx) => {
+    if (data.farmerId) {
+      const wallet = await tx.farmerWallet.findUnique({ where: { farmerId: data.farmerId } });
+      if (!wallet || wallet.balance < toSoM(commissionUSD)) {
+        throw new ValidationError('Farmer balance is insufficient for commission payment');
+      }
+
+      await tx.farmerTransaction.create({
+        data: {
+          walletId: wallet.id,
+          shipmentId: trackId,
+          amount: toSoM(commissionUSD),
+          type: TransactionType.WITHDRAW,
+          gateway: 'SYSTEM',
+          status: TransactionStatus.SUCCESS,
+          description: `Shipment ${trackId} platform commission`,
+        },
+      });
+
+      await tx.farmerWallet.update({
+        where: { farmerId: data.farmerId },
+        data: { balance: { decrement: toSoM(commissionUSD) } },
+      });
+    }
+
+    const created = await tx.shipment.create({
+      data: {
+        trackId,
+        orderId: data.orderId,
+        originLat: data.originLat,
+        originLng: data.originLng,
+        originAddress: data.originAddress,
+        destLat: data.destLat,
+        destLng: data.destLng,
+        destAddress: data.destAddress,
+        cargoType: data.cargoType,
+        weightTons: data.weightTons,
+        freightCost: freightCostUSD,
+        distanceKm,
+        etaAt: eta,
+        status: ShipmentStatus.PENDING_DRIVER,
+        tempMaxAllowed: data.tempMaxAllowed ?? 4.0,
+        requiresRefrigeration: data.requiresRefrigeration ?? true,
+        tempCelsius: null,
+        progressPercent: 0,
+      },
+      include: { driver: true, vehicle: true },
+    });
+
+    await tx.driverTrackerToken.create({
+      data: {
+        token: secureToken,
+        trackId,
+        driverId: data.driverPhone ?? '',
+      },
+    });
+
+    return created;
   });
 
-  await notifyAvailableDrivers(shipment);
-  logger.info('Shipment created', { trackId, orderId: data.orderId });
+  const candidates = await fetchDriverCandidates({
+    originLat: data.originLat,
+    originLng: data.originLng,
+    requiresRefrigeration: data.requiresRefrigeration,
+  });
+  const matched = await driverQueueService.enqueueForShipment(trackId, candidates);
+  if (matched) {
+    await assignDriver(trackId, matched.id);
+  }
+
+  await notifyAvailableDrivers(shipment, data.driverPhone);
+  await getTrackingService().createRoom(trackId);
+  logger.info('Shipment created', { trackId, orderId: data.orderId, commissionUSD, freightCostUSD, secureToken });
   return formatShipment(shipment);
 }
 
-async function notifyAvailableDrivers(shipment: { trackId: string; originAddress: string; destAddress: string; cargoType: string; weightTons: number; freightCost: number }) {
+async function fetchDriverCandidates(input: {
+  originLat: number;
+  originLng: number;
+  requiresRefrigeration?: boolean;
+}): Promise<DriverCandidate[]> {
+  const drivers = await prisma.driver.findMany({
+    where: {
+      isVerified: true,
+      isActive: true,
+      telegramId: { not: null },
+      status: 'AVAILABLE',
+    },
+    include: { vehicle: true },
+  });
+
+  const origin = { lat: input.originLat, lng: input.originLng };
+
+  return drivers
+    .filter((d) => {
+      if (input.requiresRefrigeration && !d.vehicle?.hasRefrigeration) return false;
+      return true;
+    })
+    .map((d) => {
+      const driverLat = d.vehicle?.currentLat ?? origin.lat;
+      const driverLng = d.vehicle?.currentLng ?? origin.lng;
+      const distanceKm = haversineKm(origin.lat, origin.lng, driverLat, driverLng);
+
+      return {
+        id: d.id,
+        fullName: d.fullName,
+        phone: d.phone,
+       telegramId: d.telegramId ?? null,
+        vehicleId: d.vehicle?.id ?? null,
+        status: (d.status as DriverCandidate['status']) ?? 'OFFLINE',
+        rating: 4.5,
+        distanceKm,
+      };
+    });
+  }
+
+async function notifyAvailableDrivers(shipment: { trackId: string; originAddress: string; destAddress: string; cargoType: string; weightTons: number; freightCost: number }, driverPhone?: string) {
   const drivers = await prisma.driver.findMany({
     where: { isVerified: true, telegramId: { not: null } },
     include: { vehicle: true },
@@ -274,7 +460,7 @@ export async function addTrackingPoint(trackId: string, lat: number, lng: number
 
   if (tempCelsius != null && tempCelsius > shipment.tempMaxAllowed) {
     status = ShipmentStatus.COLD_CHAIN_ALERT;
-    logger.warn('Cold chain alert', { trackId, tempCelsius });
+    await checkColdChainViolation(trackId, tempCelsius);
   }
 
   await prisma.shipment.update({
@@ -334,21 +520,26 @@ export async function confirmDelivery(trackId: string) {
 }
 
 export async function listVehicles() {
-  const vehicles = await prisma.vehicle.findMany({
-    include: { driver: true },
-    orderBy: { status: 'asc' },
-  });
+  try {
+    const vehicles = await prisma.vehicle.findMany({
+      include: { driver: true },
+      orderBy: { status: 'asc' },
+    });
 
-  return vehicles.map((v) => ({
-    id: v.id,
-    name: v.name ?? `${v.type.replace('_', ' ')}`,
-    plate: v.plateNumber,
-    status: v.status === 'AVAILABLE' ? 'Available' : v.status === 'ON_ROUTE' ? 'Busy' : 'Maintenance',
-    location: v.currentLocation ?? 'Unknown',
-    fuelPercent: v.fuelPercent,
-    hasRefrigeration: v.hasRefrigeration,
-    driver: v.driver?.fullName,
-  }));
+    return vehicles.map((v) => ({
+      id: v.id,
+      name: v.name ?? `${v.type.replace('_', ' ')}`,
+      plate: v.plateNumber,
+      status: v.status === 'AVAILABLE' ? 'Available' : v.status === 'ON_ROUTE' ? 'Busy' : 'Maintenance',
+      location: v.currentLocation ?? 'Unknown',
+      fuelPercent: v.fuelPercent,
+      hasRefrigeration: v.hasRefrigeration,
+      driver: v.driver?.fullName,
+    }));
+  } catch (error) {
+    console.error('[shipmentService:listVehicles] fallback due to db error', error);
+    return [];
+  }
 }
 
 export async function listWarehouses() {

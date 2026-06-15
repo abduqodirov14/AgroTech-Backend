@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { env } from '../../../config/env';
+import { env } from '../../config/env';
 import { markdownSafe } from '../../utils/errors';
 
 export const handleDriverStart = async (bot: TelegramBot, msg: TelegramBot.Message) => {

@@ -1,7 +1,7 @@
 import TelegramBot from 'node-telegram-bot-api';
 import prisma from '../../infrastructure/database/prisma';
 import { logger } from '../../utils/errors';
-import { statusKeyboard } from '../keyboards/driverKeyboards';
+import { statusKeyboard, shipmentActionKeyboard } from '../keyboards/driverKeyboards';
 
 export const handleCallbackQuery = async (bot: TelegramBot, query: TelegramBot.CallbackQuery) => {
   const data = query.data;

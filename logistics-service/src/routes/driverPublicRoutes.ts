@@ -12,6 +12,7 @@ const router = Router();
 router.get('/:trackId', async (req, res) => {
   try {
     const { trackId } = req.params;
+    const token = req.query.token as string | undefined;
 
     const shipment = await prisma.shipment.findUnique({
       where: { trackId },
@@ -28,11 +29,29 @@ router.get('/:trackId', async (req, res) => {
         <html>
         <head><title>Shipment Not Found</title></head>
         <body style="font-family: Arial; text-align: center; padding: 50px;">
-          <h1>❌ Shipment Not Found</h1>
+          <h1>❌ Yuk topilmadi</h1>
           <p>Tracking ID: ${trackId}</p>
         </body>
         </html>
       `);
+    }
+
+    if (token) {
+      const tokenRecord = await prisma.driverTrackerToken.findUnique({
+        where: { token },
+        include: { driver: true },
+      });
+
+      if (!tokenRecord || tokenRecord.trackId !== trackId) {
+        return res.status(403).send('<h1>❌ Noto‘g‘ri havola yoki token</h1>');
+      }
+
+      if (!tokenRecord.consumedAt) {
+        await prisma.driverTrackerToken.update({
+          where: { id: tokenRecord.id },
+          data: { consumedAt: new Date() },
+        });
+      }
     }
 
     const currentLat =
