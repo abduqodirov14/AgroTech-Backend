@@ -418,7 +418,12 @@ export async function listPendingDrivers() {
 }
 
 export async function verifyDriver(driverId: string, verified: boolean) {
-  const driver = await prisma.driver.update({
+  const driver = await prisma.driver.findUnique({
+    where: { id: driverId },
+  });
+  if (!driver) throw new NotFoundError('Driver not found');
+
+  const update = await prisma.driver.update({
     where: { id: driverId },
     data: { isVerified: verified },
   });
@@ -427,13 +432,21 @@ export async function verifyDriver(driverId: string, verified: boolean) {
     const bg = require("node-telegram-bot-api").default || require("node-telegram-bot-api");
     const bot = new bg(process.env.TELEGRAM_LOGISTICS_BOT_TOKEN, { polling: false });
     try {
-      await bot.sendMessage(Number(driver.telegramId), "🚀 Profilingiz tasdiqlandi! [🟢 Ishga tayyorman] tugmasini bosing.");
+      await bot.sendMessage(Number(driver.telegramId), "🚀 Profilingiz tasdiqlandi! Endi quyidagi tugmalardan foydalanishingiz mumkin.", {
+        reply_markup: {
+          keyboard: [
+            ['🟢 Ishga tayyorman', '🔴 Dam olmoqdaman'],
+            ['📦 Yuklarim', '🗺️ Xaritani ochish'],
+          ],
+          resize_keyboard: true,
+        },
+      });
     } catch (e) {
       logger.error("Failed to send verification message to driver", { error: e });
     }
   }
 
-  return driver;
+  return update;
 }
 
 export async function assignDriver(trackId: string, driverId: string) {

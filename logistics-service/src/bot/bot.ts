@@ -23,7 +23,7 @@ export const initializeLogisticsBot = async () => {
     const TelegramBotClass = require("node-telegram-bot-api").default || require("node-telegram-bot-api");
 
     const bot = new TelegramBotClass(token, {
-      polling: false, // Disabled for Supabase compatibility
+      polling: true,
     });
 
     bot.on("polling_error", (error: unknown) => {
@@ -52,6 +52,9 @@ export const initializeLogisticsBot = async () => {
             if (msg.contact) {
               const { handleDriverContact } = await import("./handlers/driverContactHandler");
               await handleDriverContact(bot as any, msg);
+            } else if (msg.photo && msg.from) {
+              const { handleDriverDocument } = await import("./handlers/driverDocumentHandler");
+              await handleDriverDocument(bot as any, msg);
             } else if (msg.text && !msg.text.startsWith("/")) {
               await bot.sendMessage(msg.chat.id, "Tushunarsiz buyruq. /start ni bosing.");
             }

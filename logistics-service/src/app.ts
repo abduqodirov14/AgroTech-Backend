@@ -50,4 +50,13 @@ app.use('/api/v1/logistics', logisticsRoutes);
 // Public driver page (no authentication required)
 app.use('/driver-page', driverPublicRoutes);
 
+// Admin driver verification web app
+app.get('/admin/drivers', (_req, res) => {
+  res.sendFile('admin-web/index.html', { root: __dirname + '/..' });
+});
+
+// Static public files
+app.use(express.static('public'));
+app.use(express.static('admin-web'));
+
 export default app;

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Haydovchi Tasdiqlash - AgroMind</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #334155; margin: 0; padding: 0; }
+    .pending-badge { background: #fef3c7; color: #d97706; border: 1px solid #f59e0b; }
+  </style>
+</head>
+<body>
+  <div id="app" class="flex flex-col h-screen">
+    <header class="px-4 pt-4 pb-3 flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-bold text-slate-900">Haydovchilar nazorati</h1>
+        <p class="text-xs text-slate-400">Tasdiqlanmagan haydovchilar ro'yxati</p>
+      </div>
+      <button id="refreshBtn" onclick="loadDrivers()" class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold">
+        ?? Yangilash
+      </button>
+    </header>
+    <div id="errorBox" class="mx-4 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-2 rounded-xl text-xs font-semibold hidden"></div>
+    <main id="driversList" class="px-4 mt-3 flex-1 overflow-y-auto pb-4"></main>
+    <div id="loadingBox" class="text-center py-10 text-slate-400">Yuklanmoqda...</div>
+    <div id="emptyBox" class="hidden text-center py-10">
+      <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+        <span class="text-3xl">?</span>
+      </div>
+      <p class="text-slate-500 font-semibold">Barcha haydovchilar tasdiqlanadi</p>
+    </div>
+  </div>
+  <script>
+    const API_BASE = 'http://localhost:3008/api/v1/logistics';
+    async function loadDrivers() {
+      const loadingBox = document.getElementById('loadingBox');
+      const emptyBox = document.getElementById('emptyBox');
+      const driversList = document.getElementById('driversList');
+      const errorBox = document.getElementById('errorBox');
+      loadingBox.classList.remove('hidden');
+      emptyBox.classList.add('hidden');
+      driversList.innerHTML = '';
+      errorBox.classList.add('hidden');
+      try {
+        const res = await fetch(API_BASE + '/admin/drivers');
+        const json = await res.json();
+        loadingBox.classList.add('hidden');
+        if (!json.success || !json.data || json.data.length === 0) {
+          emptyBox.classList.remove('hidden');
+          return;
+        }
+        driversList.innerHTML = json.data.map(driver => `
+          <div class="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm mb-3" data-id="${driver.id}">
+            <div class="flex items-start justify-between mb-3">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center font-bold text-lg">
+                  ${driver.fullName?.charAt(0) || '??'}
+                </div>
+                <div>
+                  <h3 class="font-bold text-slate-900 text-sm">${driver.fullName}</h3>
+                  <p class="text-xs text-slate-500 font-mono">${driver.phone}</p>
+                </div>
+              </div>
+              <span class="pending-badge text-[10px] font-bold px-2.5 py-1 rounded-full">Kutilmoqda</span>
+            </div>
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-emerald-600">??</span>
+              <a href="tel:${driver.phone}" class="text-xs font-bold text-emerald-700 hover:underline">${driver.phone}</a>
+            </div>
+            <div class="mb-3">
+              <p class="text-[10px] font-bold text-slate-500 uppercase mb-2">Hujjatlar</p>
+              <div class="grid grid-cols-2 gap-2">
+                <div class="bg-slate-50 rounded-xl p-2 border border-slate-200">
+                  <p class="text-[10px] font-semibold text-slate-600 mb-1">Prava</p>
+                  <div class="w-full h-20 bg-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-xs">
+                    ${driver.licenseImage ? '<img src="' + driver.licenseImage + '" class="w-full h-full object-cover rounded-lg">' : 'Rasm yo\'q'}
+                  </div>
+                </div>
+                <div class="bg-slate-50 rounded-xl p-2 border border-slate-200">
+                  <p class="text-[10px] font-semibold text-slate-600 mb-1">Tex pasport</p>
+                  <div class="w-full h-20 bg-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-xs">
+                    ${driver.vehicleImage ? '<img src="' + driver.vehicleImage + '" class="w-full h-full object-cover rounded-lg">' : 'Rasm yo\'q'}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="verifyDriver('${driver.id}', true)" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs">? Tasdiqlash</button>
+              <button onclick="verifyDriver('${driver.id}', false)" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs">? Rad etish</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        loadingBox.classList.add('hidden');
+        errorBox.textContent = 'Xatolik: ' + (e.message || 'Haydovchilarni yuklashda xatolik');
+        errorBox.classList.remove('hidden');
+      }
+    }
+    async function verifyDriver(driverId, verified) {
+      const card = document.querySelector('[data-id="' + driverId + '"]');
+      const buttons = card.querySelectorAll('button');
+      buttons.forEach(b => b.disabled = true);
+      try {
+        const res = await fetch(API_BASE + '/admin/drivers/' + driverId + '/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verified: verified })
+        });
+        if (res.ok) { card.remove(); } else { alert('Tasdiqlashda xatolik!'); }
+      } catch (e) { alert('Xatolik: ' + e.message); }
+      buttons.forEach(b => b.disabled = false);
+    }
+    document.addEventListener('DOMContentLoaded', loadDrivers);
+  </script>
+</body>
+</html>

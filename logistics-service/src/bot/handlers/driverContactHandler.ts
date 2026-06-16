@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import prisma from '../../infrastructure/database/prisma';
-import { logger } from '../../utils/errors';
+import { logger } from '../../utils/logger';
 import { statusKeyboard } from '../keyboards/driverKeyboards';
 
 export const handleDriverContact = async (bot: TelegramBot, msg: TelegramBot.Message) => {
@@ -26,16 +26,20 @@ export const handleDriverContact = async (bot: TelegramBot, msg: TelegramBot.Mes
         phone: normalizedPhone,
         fullName: `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || msg.from?.first_name || 'Haydovchi',
         telegramId: BigInt(contact.user_id || msg.from!.id),
-        isVerified: true,
+        isVerified: false,
       },
     });
 
-    await bot.sendMessage(chatId, `✅ Profil topildi: ${driver.fullName}`, {
+    await bot.sendMessage(chatId, `✅ Kontakt va hujjatlar qabul qilindi!`, {
       reply_markup: { remove_keyboard: true },
     });
 
-    await bot.sendMessage(chatId, 'Iltimos, holatni tanlang:', {
-      reply_markup: statusKeyboard(driver.status !== 'offline'),
+    await bot.sendMessage(chatId, 'Operatorlarimiz tez orada bog\'lanishadi! Hujjatlarni tekshirish uchun kutishingiz vaqt ichida tasdiqlanadi.', {
+      reply_markup: { remove_keyboard: true },
+    });
+
+    await bot.sendMessage(chatId, `📋 Iltimos, quyidagi hujjatlarni yuboring:\n1. Haydovchilik guvohnomasi (prava)\n2. Fura texnik pasporti`, {
+      reply_markup: { remove_keyboard: true },
     });
   } catch (err: any) {
     logger.error('Driver contact upsert failed', { error: err?.message });
