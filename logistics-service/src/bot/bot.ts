@@ -3,14 +3,13 @@ import { env } from "../config/env";
 import { logger } from "../utils/logger";
 import { statusKeyboard } from "./keyboards/driverKeyboards";
 
-export type DriverStatus = "available" | "offline" | "assigned" | "in_transit" | "arrived";
-
 function normalizeWhitespace(text: string) {
   return text.replace(/\\s+/g, " ").trim();
 }
 
 const REQUIRED_START_PROMPT = normalizeWhitespace(`
-🚛 AgroHub Logistics botiga xush kelibsiz! Telefon raqamingizni yuboring:
+🚛 AgroTech Logistics botiga xush kelibsiz!
+Telefon raqamingizni yuboring:
 `);
 
 export const initializeLogisticsBot = async () => {
@@ -23,25 +22,14 @@ export const initializeLogisticsBot = async () => {
   try {
     const TelegramBotClass = require("node-telegram-bot-api").default || require("node-telegram-bot-api");
 
-    let bot: InstanceType<typeof TelegramBotClass>;
-    try {
-      bot = new TelegramBotClass(token, {
-        polling: { interval: 300, params: { timeout: 10 } },
-      }) as unknown as InstanceType<typeof TelegramBotClass>;
-    } catch (initError: unknown) {
-      logger.error("Failed to create Telegram bot instance", {
-        message: (initError as Error)?.message,
-        stack: (initError as Error)?.stack,
-      });
-      throw initError;
-    }
+    const bot = new TelegramBotClass(token, {
+      polling: false, // Disabled for Supabase compatibility
+    });
 
     bot.on("polling_error", (error: unknown) => {
       const reason = (error as Error)?.message || String(error);
       if (/ECONNRESET|EFATAL/i.test(reason)) {
         logger.warn("Telegram polling connection reset", { reason });
-      } else {
-        logger.error("Logistics bot polling error", { reason });
       }
     });
 
@@ -62,20 +50,16 @@ export const initializeLogisticsBot = async () => {
 
           default:
             if (msg.contact) {
-              await bot.sendMessage(msg.chat.id, "Kontakt qabul qilindi. Tez orada bog'lanamiz!", {
-                reply_markup: { remove_keyboard: true },
-              });
+              const { handleDriverContact } = await import("./handlers/driverContactHandler");
+              await handleDriverContact(bot as any, msg);
             } else if (msg.text && !msg.text.startsWith("/")) {
-              await bot.sendMessage(msg.chat.id, "Tushunarsiz buyruq. /start ni bosing.", {
-                reply_markup: statusKeyboard("available"),
-              });
+              await bot.sendMessage(msg.chat.id, "Tushunarsiz buyruq. /start ni bosing.");
             }
             break;
         }
       } catch (error: unknown) {
         logger.error("Logistics bot message handler failed", {
           message: (error as Error)?.message || "Unknown error",
-          stack: (error as Error)?.stack,
           chatId: msg.chat?.id,
         });
       }
@@ -88,7 +72,6 @@ export const initializeLogisticsBot = async () => {
       } catch (error: unknown) {
         logger.error("Logistics bot callback error", {
           message: (error as Error)?.message || "Unknown error",
-          stack: (error as Error)?.stack,
         });
       }
     });
@@ -97,8 +80,6 @@ export const initializeLogisticsBot = async () => {
   } catch (error: unknown) {
     logger.error("Failed to initialize logistics bot", {
       message: (error as Error)?.message,
-      stack: (error as Error)?.stack,
-      code: (error as { code?: string })?.code,
     });
   }
 };

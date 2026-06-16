@@ -53,6 +53,8 @@ model Driver {
   status    String @default("offline") @map("status")
   secureToken   String? @unique @map("secure_token")
   lastStatusUpdate DateTime? @map("last_status_update")
+  licenseImage   String? @map("license_image")
+  vehicleImage   String? @map("vehicle_image")
 
   vehicle   Vehicle?
   shipments Shipment[]
@@ -99,7 +101,6 @@ model Shipment {
   status          ShipmentStatus @default(PENDING_DRIVER)
   tempCelsius     Float?         @map("temp_celsius")
   tempMaxAllowed  Float          @default(5) @map("temp_max_allowed")
-  requiresRefrigeration Boolean @default(false) @map("requires_refrigeration")
   progressPercent Int            @default(0) @map("progress_percent")
   distanceKm      Float?         @map("distance_km")
   etaAt           DateTime?      @map("eta_at")

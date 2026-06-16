@@ -314,7 +314,6 @@ export async function createShipment(data: {
         etaAt: eta,
         status: ShipmentStatus.PENDING_DRIVER,
         tempMaxAllowed: data.tempMaxAllowed ?? 4.0,
-        requiresRefrigeration: data.requiresRefrigeration ?? true,
         tempCelsius: null,
         progressPercent: 0,
       },
@@ -400,6 +399,41 @@ async function notifyAvailableDrivers(shipment: { trackId: string; originAddress
     driversNotified: refrigerated.length || drivers.length,
     message: `Yangi buyurtma! ${shipment.originAddress} → ${shipment.destAddress}. Yuk: ${shipment.weightTons}t ${shipment.cargoType}. Yo'l kira: $${shipment.freightCost}`,
   });
+}
+
+export async function listPendingDrivers() {
+  return prisma.driver.findMany({
+    where: { isVerified: false },
+    select: {
+      id: true,
+      fullName: true,
+      phone: true,
+      telegramId: true,
+      status: true,
+      createdAt: true,
+      licenseImage: true,
+      vehicleImage: true,
+    },
+  });
+}
+
+export async function verifyDriver(driverId: string, verified: boolean) {
+  const driver = await prisma.driver.update({
+    where: { id: driverId },
+    data: { isVerified: verified },
+  });
+
+  if (verified && driver.telegramId) {
+    const bg = require("node-telegram-bot-api").default || require("node-telegram-bot-api");
+    const bot = new bg(process.env.TELEGRAM_LOGISTICS_BOT_TOKEN, { polling: false });
+    try {
+      await bot.sendMessage(Number(driver.telegramId), "🚀 Profilingiz tasdiqlandi! [🟢 Ishga tayyorman] tugmasini bosing.");
+    } catch (e) {
+      logger.error("Failed to send verification message to driver", { error: e });
+    }
+  }
+
+  return driver;
 }
 
 export async function assignDriver(trackId: string, driverId: string) {

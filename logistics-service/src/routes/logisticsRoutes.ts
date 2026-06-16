@@ -329,6 +329,26 @@ router.post('/seed-demo', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.get('/admin/drivers', async (_req, res, next) => {
+  try {
+    const drivers = await shipmentService.listPendingDrivers();
+    res.json({ success: true, data: drivers });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/admin/drivers/:id/verify', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { verified } = req.body;
+    const driver = await shipmentService.verifyDriver(id, verified);
+    res.json({ success: true, data: driver, message: `Driver ${verified ? 'verified' : 'rejected'} successfully` });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({ success: false, error: err.message });
